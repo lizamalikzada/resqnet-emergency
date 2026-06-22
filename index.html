@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ResQNet — Emergency Command Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:        #0a0c0f;
+    --bg2:       #111318;
+    --bg3:       #181c22;
+    --border:    rgba(255,255,255,0.07);
+    --border2:   rgba(255,255,255,0.12);
+    --text:      #e8eaf0;
+    --muted:     #6b7280;
+    --red:       #ef4444;
+    --red-dim:   rgba(239,68,68,0.12);
+    --amber:     #f59e0b;
+    --amber-dim: rgba(245,158,11,0.12);
+    --green:     #22c55e;
+    --green-dim: rgba(34,197,94,0.12);
+    --blue:      #3b82f6;
+    --blue-dim:  rgba(59,130,246,0.12);
+    --font:      'Syne', sans-serif;
+    --mono:      'JetBrains Mono', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+
+  /* ── Layout ── */
+  .shell { display: flex; height: 100vh; }
+  .sidebar { width: 220px; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ── Sidebar ── */
+  .logo { padding: 24px 20px 20px; border-bottom: 1px solid var(--border); }
+  .logo-mark { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .logo-icon { width: 32px; height: 32px; background: var(--red); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .logo-name { font-size: 18px; font-weight: 800; letter-spacing: -0.5px; color: #fff; }
+  .logo-sub { font-size: 11px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+
+  .nav { padding: 16px 12px; flex: 1; }
+  .nav-section { font-size: 10px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; padding: 0 8px; margin: 16px 0 6px; }
+  .nav-section:first-child { margin-top: 0; }
+  .ni { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); border: none; background: none; width: 100%; text-align: left; transition: all 0.15s; margin-bottom: 2px; }
+  .ni:hover { background: var(--bg3); color: var(--text); }
+  .ni.active { background: var(--red-dim); color: var(--red); }
+  .ni svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .ni-badge { margin-left: auto; background: var(--red); color: #fff; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 99px; font-family: var(--mono); }
+
+  .live-pill { margin: 0 12px 16px; display: flex; align-items: center; gap: 8px; background: var(--red-dim); border: 1px solid rgba(239,68,68,0.25); border-radius: 8px; padding: 8px 12px; }
+  .live-dot { width: 7px; height: 7px; background: var(--red); border-radius: 50%; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:0.5;transform:scale(0.8);} }
+  .live-text { font-size: 12px; font-weight: 600; color: var(--red); }
+  .live-time { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-left: auto; }
+
+  /* ── Topbar ── */
+  .topbar { padding: 0 24px; height: 56px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--bg2); flex-shrink: 0; }
+  .page-title { font-size: 16px; font-weight: 700; color: #fff; }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+  .btn { padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid var(--border2); background: var(--bg3); color: var(--text); font-family: var(--font); transition: all 0.15s; }
+  .btn:hover { border-color: var(--border2); background: var(--bg2); }
+  .btn-red { background: var(--red); color: #fff; border-color: transparent; }
+  .btn-red:hover { opacity: 0.88; }
+  .user-chip { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 500; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--blue); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; }
+
+  /* ── Content ── */
+  .content { flex: 1; overflow-y: auto; padding: 24px; }
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ── Stats grid ── */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+  .stat { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; position: relative; overflow: hidden; }
+  .stat::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+  .stat.red::before { background: var(--red); }
+  .stat.amber::before { background: var(--amber); }
+  .stat.green::before { background: var(--green); }
+  .stat.blue::before { background: var(--blue); }
+  .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+  .stat-val { font-size: 28px; font-weight: 800; color: #fff; line-height: 1; margin-bottom: 4px; font-family: var(--mono); }
+  .stat.red .stat-val { color: var(--red); }
+  .stat.amber .stat-val { color: var(--amber); }
+  .stat.green .stat-val { color: var(--green); }
+  .stat.blue .stat-val { color: var(--blue); }
+  .stat-sub { font-size: 12px; color: var(--muted); }
+
+  /* ── Grid layouts ── */
+  .two-col { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 16px; margin-bottom: 16px; }
+  .three-col { display: grid; grid-template-columns: minmax(0,2fr) minmax(0,1fr); gap: 16px; margin-bottom: 16px; }
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .card-title { font-size: 13px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .card-title-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .dot-red { background: var(--red); }
+  .dot-amber { background: var(--amber); }
+  .dot-green { background: var(--green); }
+  .dot-blue { background: var(--blue); }
+
+  /* ── Badges ── */
+  .badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 99px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; font-family: var(--mono); }
+  .b-red    { background: var(--red-dim);   color: var(--red);   border: 1px solid rgba(239,68,68,0.3); }
+  .b-amber  { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,158,11,0.3); }
+  .b-green  { background: var(--green-dim); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+  .b-blue   { background: var(--blue-dim);  color: var(--blue);  border: 1px solid rgba(59,130,246,0.3); }
+  .b-gray   { background: rgba(255,255,255,0.05); color: var(--muted); border: 1px solid var(--border); }
+
+  /* ── Incident list ── */
+  .inc-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); animation: slideIn 0.3s ease; }
+  @keyframes slideIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+  .inc-item:last-child { border-bottom: none; }
+  .inc-icon { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+  .ii-red   { background: var(--red-dim); }
+  .ii-amber { background: var(--amber-dim); }
+  .ii-blue  { background: var(--blue-dim); }
+  .ii-green { background: var(--green-dim); }
+  .inc-body { flex: 1; min-width: 0; }
+  .inc-title { font-size: 13px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .inc-meta  { font-size: 12px; color: var(--muted); margin-top: 3px; font-family: var(--mono); }
+
+  /* ── Resource bars ── */
+  .res-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .res-item:last-child { border-bottom: none; }
+  .res-label { font-size: 12px; color: var(--text); width: 130px; flex-shrink: 0; }
+  .res-bar { flex: 1; height: 5px; background: rgba(255,255,255,0.07); border-radius: 99px; overflow: hidden; }
+  .res-fill { height: 100%; border-radius: 99px; transition: width 0.8s ease; }
+  .res-count { font-size: 12px; color: var(--muted); font-family: var(--mono); width: 40px; text-align: right; flex-shrink: 0; }
+
+  /* ── Log ── */
+  .log-item { display: grid; grid-template-columns: 70px 1fr; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .log-item:last-child { border-bottom: none; }
+  .log-time { color: var(--muted); font-family: var(--mono); }
+  .log-msg { color: var(--text); }
+
+  /* ── Table ── */
+  .table-wrap { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { padding: 10px 14px; text-align: left; font-size: 10px; font-weight: 700; color: var(--muted); background: var(--bg3); border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.08em; }
+  td { padding: 11px 14px; color: var(--text); border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+
+  /* ── Form ── */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-group.full { grid-column: 1/-1; }
+  .form-group label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  .form-group input, .form-group select, .form-group textarea {
+    background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px;
+    padding: 10px 14px; font-size: 13px; color: var(--text); font-family: var(--font);
+    outline: none; transition: border 0.15s;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--red); }
+  .form-group select option { background: var(--bg3); }
+  .form-group textarea { resize: vertical; min-height: 80px; }
+
+  /* ── Zone cards ── */
+  .zones-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .zone-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .zone-name { font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .zone-sub { font-size: 12px; color: var(--muted); margin-bottom: 10px; font-family: var(--mono); }
+  .zone-bar { height: 4px; background: rgba(255,255,255,0.07); border-radius: 99px; overflow: hidden; margin-top: 10px; }
+  .zone-fill { height: 100%; border-radius: 99px; }
+
+  /* ── AI panel ── */
+  .ai-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .ai-row:last-child { border-bottom: none; }
+  .ai-label { font-size: 13px; color: var(--text); flex: 1; }
+  .ai-bar-wrap { width: 100px; height: 5px; background: rgba(255,255,255,0.07); border-radius: 99px; overflow: hidden; }
+  .ai-bar-fill { height: 100%; border-radius: 99px; }
+  .ai-pct { font-size: 12px; font-weight: 700; font-family: var(--mono); width: 36px; text-align: right; }
+
+  /* ── Toast ── */
+  #toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+  .toast { background: var(--bg2); border: 1px solid var(--border2); border-radius: 10px; padding: 12px 16px; font-size: 13px; min-width: 280px; animation: toastIn 0.3s ease; display: flex; align-items: flex-start; gap: 10px; }
+  @keyframes toastIn { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:translateX(0); } }
+  .toast.critical { border-color: rgba(239,68,68,0.5); }
+  .toast-icon { font-size: 18px; flex-shrink: 0; }
+  .toast-title { font-weight: 700; color: #fff; margin-bottom: 2px; }
+  .toast-body  { font-size: 12px; color: var(--muted); }
+
+  /* ── Search ── */
+  .search-bar { display: flex; align-items: center; gap: 8px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; padding: 0 12px; margin-bottom: 16px; }
+  .search-bar input { flex: 1; background: none; border: none; outline: none; padding: 10px 0; font-size: 13px; color: var(--text); font-family: var(--font); }
+  .search-icon { color: var(--muted); font-size: 15px; }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div id="toast-container"></div>
+
+<div class="shell">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="logo">
+      <div class="logo-mark">
+        <div class="logo-icon">🚨</div>
+        <div class="logo-name">ResQNet</div>
+      </div>
+      <div class="logo-sub">Emergency Command</div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-section">Overview</div>
+      <button class="ni active" onclick="go('dashboard',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Dashboard
+        <span class="ni-badge" id="nav-badge">14</span>
+      </button>
+
+      <div class="nav-section">Operations</div>
+      <button class="ni" onclick="go('incidents',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Incidents
+      </button>
+      <button class="ni" onclick="go('report',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        Report Incident
+      </button>
+      <button class="ni" onclick="go('resources',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        Resources
+      </button>
+      <button class="ni" onclick="go('zones',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        Zone Map
+      </button>
+
+      <div class="nav-section">Intelligence</div>
+      <button class="ni" onclick="go('ai',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 014 4v1a4 4 0 01-8 0V6a4 4 0 014-4z"/><path d="M6 12h12M12 12v8"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><circle cx="12" cy="20" r="2"/></svg>
+        AI Analysis
+      </button>
+      <button class="ni" onclick="go('alerts',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        Public Alerts
+      </button>
+    </nav>
+
+    <div class="live-pill">
+      <div class="live-dot"></div>
+      <div class="live-text">LIVE</div>
+      <div class="live-time" id="clock">--:--:--</div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <div class="page-title" id="ptitle">Command Dashboard</div>
+      <div class="topbar-right">
+        <button class="btn" onclick="fetchStats()">↻ Refresh</button>
+        <button class="btn btn-red" onclick="go('report', document.querySelector('.ni:nth-child(4)'))">🚨 Report Emergency</button>
+        <div class="user-chip">
+          <div class="avatar">RC</div>
+          Control Room
+        </div>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- DASHBOARD -->
+      <div class="page active" id="page-dashboard">
+        <div class="stats">
+          <div class="stat red">
+            <div class="stat-label">Active Incidents</div>
+            <div class="stat-val" id="s-active">—</div>
+            <div class="stat-sub" id="s-critical-sub">loading…</div>
+          </div>
+          <div class="stat amber">
+            <div class="stat-label">Units Deployed</div>
+            <div class="stat-val" id="s-deployed">38</div>
+            <div class="stat-sub">of 52 total</div>
+          </div>
+          <div class="stat green">
+            <div class="stat-label">Resolved Today</div>
+            <div class="stat-val" id="s-resolved">—</div>
+            <div class="stat-sub">avg 18 min response</div>
+          </div>
+          <div class="stat blue">
+            <div class="stat-label">Alerts Sent</div>
+            <div class="stat-val">1,204</div>
+            <div class="stat-sub">to citizens today</div>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="card">
+            <div class="card-title"><span class="card-title-dot dot-red"></span>Live Incidents</div>
+            <div id="live-incidents">
+              <div class="inc-item">
+                <div class="inc-icon ii-red">🔥</div>
+                <div class="inc-body">
+                  <div class="inc-title">Building fire — Sector 12</div>
+                  <div class="inc-meta">4 min ago · Zone A · 3 units</div>
+                </div>
+                <span class="badge b-red">CRITICAL</span>
+              </div>
+              <div class="inc-item">
+                <div class="inc-icon ii-amber">🌊</div>
+                <div class="inc-body">
+                  <div class="inc-title">Flash flood — Riverbank Rd</div>
+                  <div class="inc-meta">11 min ago · Zone B · 2 units</div>
+                </div>
+                <span class="badge b-amber">HIGH</span>
+              </div>
+              <div class="inc-item">
+                <div class="inc-icon ii-blue">🚗</div>
+                <div class="inc-body">
+                  <div class="inc-title">Road accident — NH-48</div>
+                  <div class="inc-meta">18 min ago · Zone C · 1 unit</div>
+                </div>
+                <span class="badge b-amber">HIGH</span>
+              </div>
+              <div class="inc-item">
+                <div class="inc-icon ii-blue">🏥</div>
+                <div class="inc-body">
+                  <div class="inc-title">Medical emergency — Block C</div>
+                  <div class="inc-meta">32 min ago · Zone A · on scene</div>
+                </div>
+                <span class="badge b-blue">MEDIUM</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title"><span class="card-title-dot dot-amber"></span>Resource Status</div>
+            <div class="res-item">
+              <div class="res-label">🚒 Fire Engines</div>
+              <div class="res-bar"><div class="res-fill" style="width:60%;background:var(--red);"></div></div>
+              <div class="res-count">6/10</div>
+            </div>
+            <div class="res-item">
+              <div class="res-label">🚑 Ambulances</div>
+              <div class="res-bar"><div class="res-fill" style="width:64%;background:var(--green);"></div></div>
+              <div class="res-count">9/14</div>
+            </div>
+            <div class="res-item">
+              <div class="res-label">🚓 Police Units</div>
+              <div class="res-bar"><div class="res-fill" style="width:70%;background:var(--blue);"></div></div>
+              <div class="res-count">14/20</div>
+            </div>
+            <div class="res-item">
+              <div class="res-label">🚁 Helicopters</div>
+              <div class="res-bar"><div class="res-fill" style="width:50%;background:var(--amber);"></div></div>
+              <div class="res-count">2/4</div>
+            </div>
+            <div class="res-item">
+              <div class="res-label">🏥 Hospital Beds</div>
+              <div class="res-bar"><div class="res-fill" style="width:71%;background:var(--green);"></div></div>
+              <div class="res-count">142/200</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-title"><span class="card-title-dot dot-blue"></span>Incidents This Week</div>
+          <canvas id="incidentChart" height="80"></canvas>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span class="card-title-dot dot-green"></span>Activity Log</div>
+          <div id="activity-log">
+            <div class="log-item"><span class="log-time">09:41 AM</span><span class="log-msg">AI flagged Sector 12 fire as <span style="color:var(--red)">CRITICAL</span> — 3 units auto-dispatched</span></div>
+            <div class="log-item"><span class="log-time">09:38 AM</span><span class="log-msg">Public SMS alert sent to 1,204 residents near Riverbank Rd</span></div>
+            <div class="log-item"><span class="log-time">09:29 AM</span><span class="log-msg">Road accident NH-48 reported via citizen app — ambulance dispatched</span></div>
+            <div class="log-item"><span class="log-time">09:15 AM</span><span class="log-msg">Incident #2241 resolved — flood control Zone B. Duration: 22 min</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- INCIDENTS TABLE -->
+      <div class="page" id="page-incidents">
+        <div class="search-bar">
+          <span class="search-icon">🔍</span>
+          <input type="text" placeholder="Search incidents by type, zone, or status..." id="inc-search" oninput="filterIncidents()">
+        </div>
+        <div class="table-wrap">
+          <table id="incidents-table">
+            <thead>
+              <tr><th>#</th><th>Type</th><th>Location</th><th>Zone</th><th>Severity</th><th>Status</th><th>Reported</th><th>Units</th></tr>
+            </thead>
+            <tbody id="incidents-tbody">
+              <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px;">Loading incidents…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- REPORT INCIDENT -->
+      <div class="page" id="page-report">
+        <div class="card" style="max-width:700px;">
+          <div class="card-title"><span class="card-title-dot dot-red"></span>Report New Incident</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Incident Type</label>
+              <select id="f-type">
+                <option value="building_fire">🔥 Building Fire</option>
+                <option value="flood">🌊 Flood</option>
+                <option value="road_accident">🚗 Road Accident</option>
+                <option value="earthquake">🏔️ Earthquake</option>
+                <option value="gas_leak">💨 Gas Leak</option>
+                <option value="explosion">💥 Explosion</option>
+                <option value="medical">🏥 Medical Emergency</option>
+                <option value="other">⚠️ Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Zone</label>
+              <select id="f-zone">
+                <option>A</option><option>B</option><option>C</option>
+                <option>D</option><option>E</option><option>F</option>
+              </select>
+            </div>
+            <div class="form-group full">
+              <label>Location / Address</label>
+              <input type="text" id="f-location" placeholder="e.g. Sector 12, Block B, Near Metro Station">
+            </div>
+            <div class="form-group full">
+              <label>Description</label>
+              <textarea id="f-desc" placeholder="Describe the emergency in detail — type of fire, number of people trapped, spread rate, etc."></textarea>
+            </div>
+            <div class="form-group">
+              <label>Casualties (if known)</label>
+              <input type="number" id="f-casualties" value="0" min="0">
+            </div>
+            <div class="form-group">
+              <label>Reported By (User ID)</label>
+              <input type="number" id="f-reporter" value="1">
+            </div>
+          </div>
+          <div style="margin-top:18px;display:flex;gap:10px;align-items:center;">
+            <button class="btn btn-red" onclick="submitIncident()">🚨 Submit Emergency Report</button>
+            <div id="report-status" style="font-size:13px;color:var(--muted);"></div>
+          </div>
+          <div id="report-result" style="margin-top:16px;display:none;" class="card" style="background:var(--bg3);">
+            <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em;">AI Classification Result</div>
+            <div id="result-content"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RESOURCES -->
+      <div class="page" id="page-resources">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Unit ID</th><th>Type</th><th>Zone</th><th>Status</th><th>Assigned To</th><th>Operator</th></tr></thead>
+            <tbody id="resources-tbody">
+              <tr><td>FIRE-01</td><td>🚒 Fire Engine</td><td>A</td><td><span class="badge b-red">Deployed</span></td><td>Incident #2258</td><td>Ram Singh</td></tr>
+              <tr><td>AMB-03</td><td>🚑 Ambulance</td><td>C</td><td><span class="badge b-red">Deployed</span></td><td>Incident #2256</td><td>Priya Nair</td></tr>
+              <tr><td>POL-07</td><td>🚓 Police</td><td>B</td><td><span class="badge b-green">Available</span></td><td>—</td><td>Ajay Kumar</td></tr>
+              <tr><td>HELI-02</td><td>🚁 Helicopter</td><td>HQ</td><td><span class="badge b-green">Available</span></td><td>—</td><td>Capt. Mehta</td></tr>
+              <tr><td>FIRE-04</td><td>🚒 Fire Engine</td><td>D</td><td><span class="badge b-green">Available</span></td><td>—</td><td>Suresh Rao</td></tr>
+              <tr><td>AMB-07</td><td>🚑 Ambulance</td><td>HQ</td><td><span class="badge b-amber">Maintenance</span></td><td>—</td><td>—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ZONES -->
+      <div class="page" id="page-zones">
+        <div class="zones-grid">
+          <div class="zone-card">
+            <div class="zone-name">Zone A — Central</div>
+            <div class="zone-sub">5 incidents · HIGH RISK</div>
+            <span class="badge b-red">High Risk</span>
+            <div class="zone-bar"><div class="zone-fill" style="width:85%;background:var(--red);"></div></div>
+          </div>
+          <div class="zone-card">
+            <div class="zone-name">Zone B — Riverbank</div>
+            <div class="zone-sub">3 incidents · MEDIUM RISK</div>
+            <span class="badge b-amber">Medium Risk</span>
+            <div class="zone-bar"><div class="zone-fill" style="width:55%;background:var(--amber);"></div></div>
+          </div>
+          <div class="zone-card">
+            <div class="zone-name">Zone C — Highway</div>
+            <div class="zone-sub">2 incidents · MEDIUM RISK</div>
+            <span class="badge b-amber">Medium Risk</span>
+            <div class="zone-bar"><div class="zone-fill" style="width:45%;background:var(--amber);"></div></div>
+          </div>
+          <div class="zone-card">
+            <div class="zone-name">Zone D — Outskirts</div>
+            <div class="zone-sub">1 incident · LOW RISK</div>
+            <span class="badge b-green">Low Risk</span>
+            <div class="zone-bar"><div class="zone-fill" style="width:20%;background:var(--green);"></div></div>
+          </div>
+          <div class="zone-card">
+            <div class="zone-name">Zone E — Industrial</div>
+            <div class="zone-sub">2 incidents · MEDIUM RISK</div>
+            <span class="badge b-amber">Medium Risk</span>
+            <div class="zone-bar"><div class="zone-fill" style="width:50%;background:var(--amber);"></div></div>
+          </div>
+          <div class="zone-card">
+            <div class="zone-name">Zone F — Residential</div>
+            <div class="zone-sub">0 incidents · SAFE</div>
+            <span class="badge b-green">Safe</span>
+            <div class="zone-bar"><div class="zone-fill" style="width:5%;background:var(--green);"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI ANALYSIS -->
+      <div class="page" id="page-ai">
+        <div class="two-col">
+          <div class="card">
+            <div class="card-title"><span class="card-title-dot dot-red"></span>AI Severity Predictions</div>
+            <div class="ai-row">
+              <div style="font-size:18px;">🔥</div>
+              <div class="ai-label">Sector 12 fire — escalation risk</div>
+              <div class="ai-bar-wrap"><div class="ai-bar-fill" style="width:87%;background:var(--red);"></div></div>
+              <div class="ai-pct" style="color:var(--red);">87%</div>
+            </div>
+            <div class="ai-row">
+              <div style="font-size:18px;">🌊</div>
+              <div class="ai-label">Riverbank flood — spread risk (2h)</div>
+              <div class="ai-bar-wrap"><div class="ai-bar-fill" style="width:61%;background:var(--amber);"></div></div>
+              <div class="ai-pct" style="color:var(--amber);">61%</div>
+            </div>
+            <div class="ai-row">
+              <div style="font-size:18px;">🚗</div>
+              <div class="ai-label">NH-48 — secondary collision risk</div>
+              <div class="ai-bar-wrap"><div class="ai-bar-fill" style="width:34%;background:var(--amber);"></div></div>
+              <div class="ai-pct" style="color:var(--amber);">34%</div>
+            </div>
+            <div class="ai-row">
+              <div style="font-size:18px;">📍</div>
+              <div class="ai-label">Zone A — resource overload (60 min)</div>
+              <div class="ai-bar-wrap"><div class="ai-bar-fill" style="width:74%;background:var(--red);"></div></div>
+              <div class="ai-pct" style="color:var(--red);">74%</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="card-title-dot dot-blue"></span>AI Recommendations</div>
+            <div class="ai-row"><div style="color:var(--red);font-size:15px;">→</div><div class="ai-label">Pre-position 2 fire engines near Zone A</div><span class="badge b-red">Urgent</span></div>
+            <div class="ai-row"><div style="color:var(--amber);font-size:15px;">→</div><div class="ai-label">Evacuation advisory for Riverbank Rd</div><span class="badge b-amber">High</span></div>
+            <div class="ai-row"><div style="color:var(--blue);font-size:15px;">→</div><div class="ai-label">Redirect traffic on NH-48</div><span class="badge b-blue">Medium</span></div>
+            <div class="ai-row"><div style="color:var(--blue);font-size:15px;">→</div><div class="ai-label">Alert hospital: prepare 20 more beds</div><span class="badge b-blue">Medium</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title"><span class="card-title-dot dot-amber"></span>Incident Type Distribution</div>
+          <canvas id="typeChart" height="60"></canvas>
+        </div>
+      </div>
+
+      <!-- ALERTS -->
+      <div class="page" id="page-alerts">
+        <div class="two-col" style="margin-bottom:16px;">
+          <div class="card">
+            <div class="card-title"><span class="card-title-dot dot-red"></span>Send Public Alert</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Zone</label>
+                <select id="a-zone"><option>A</option><option>B</option><option>C</option><option>D</option><option>All Zones</option></select>
+              </div>
+              <div class="form-group">
+                <label>Alert Type</label>
+                <select id="a-type">
+                  <option value="evacuation">Evacuation Warning</option>
+                  <option value="shelter">Shelter Advisory</option>
+                  <option value="road_closure">Road Closure</option>
+                  <option value="all_clear">All Clear</option>
+                </select>
+              </div>
+              <div class="form-group full">
+                <label>Message</label>
+                <textarea id="a-msg" placeholder="Alert message to send to citizens..."></textarea>
+              </div>
+            </div>
+            <div style="margin-top:14px;display:flex;gap:10px;">
+              <button class="btn btn-red" onclick="sendAlert()">📢 Broadcast Alert</button>
+              <div id="alert-status" style="font-size:13px;color:var(--muted);line-height:1.4;"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="card-title-dot dot-amber"></span>Alert Stats</div>
+            <div class="res-item"><div class="res-label">SMS alerts</div><div class="res-bar"><div class="res-fill" style="width:80%;background:var(--blue);"></div></div><div class="res-count">876</div></div>
+            <div class="res-item"><div class="res-label">App notifications</div><div class="res-bar"><div class="res-fill" style="width:65%;background:var(--green);"></div></div><div class="res-count">2,311</div></div>
+            <div class="res-item"><div class="res-label">Evacuations</div><div class="res-bar"><div class="res-fill" style="width:30%;background:var(--amber);"></div></div><div class="res-count">3</div></div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Alert ID</th><th>Type</th><th>Zone</th><th>Recipients</th><th>Channel</th><th>Time</th></tr></thead>
+            <tbody>
+              <tr><td>#AL-441</td><td>Evacuation Warning</td><td>Zone B</td><td>1,204</td><td><span class="badge b-blue">SMS</span></td><td>09:38 AM</td></tr>
+              <tr><td>#AL-440</td><td>Road Closure</td><td>Zone C</td><td>876</td><td><span class="badge b-green">App+SMS</span></td><td>09:29 AM</td></tr>
+              <tr><td>#AL-439</td><td>Fire Alert</td><td>Zone A</td><td>2,311</td><td><span class="badge b-blue">App</span></td><td>09:41 AM</td></tr>
+              <tr><td>#AL-438</td><td>All Clear</td><td>Zone D</td><td>543</td><td><span class="badge b-green">SMS</span></td><td>08:55 AM</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:5000/api';
+const PAGES = {
+  dashboard: 'Command Dashboard',
+  incidents: 'Incident Management',
+  report: 'Report Incident',
+  resources: 'Resource Tracking',
+  zones: 'Zone Risk Map',
+  ai: 'AI Analysis',
+  alerts: 'Public Alerts',
+};
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function go(id, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.ni').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  if (btn) btn.classList.add('active');
+  document.getElementById('ptitle').textContent = PAGES[id] || id;
+  if (id === 'incidents') loadIncidents();
+}
+
+// ── Clock ─────────────────────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('en-IN', {hour12: false});
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+async function fetchStats() {
+  try {
+    const res  = await fetch(`${API}/incidents/stats`);
+    const data = await res.json();
+    document.getElementById('s-active').textContent   = data.active_incidents ?? '—';
+    document.getElementById('s-resolved').textContent = data.resolved_today ?? '—';
+    document.getElementById('s-critical-sub').textContent =
+      `${data.critical_incidents ?? 0} critical`;
+    document.getElementById('nav-badge').textContent  = data.active_incidents ?? '';
+  } catch {
+    // Backend offline — show demo data
+    document.getElementById('s-active').textContent   = '14';
+    document.getElementById('s-resolved').textContent = '27';
+    document.getElementById('s-critical-sub').textContent = '3 critical';
+  }
+}
+
+// ── Incidents table ───────────────────────────────────────────────────────────
+let allIncidents = [];
+async function loadIncidents() {
+  try {
+    const res  = await fetch(`${API}/incidents/?limit=50`);
+    allIncidents = await res.json();
+    renderIncidents(allIncidents);
+  } catch {
+    allIncidents = DEMO_INCIDENTS;
+    renderIncidents(allIncidents);
+  }
+}
+
+function severityBadge(s) {
+  const map = {critical:'b-red',high:'b-amber',medium:'b-blue',low:'b-gray'};
+  return `<span class="badge ${map[s]||'b-gray'}">${(s||'').toUpperCase()}</span>`;
+}
+function statusBadge(s) {
+  const map = {reported:'b-gray',dispatched:'b-amber',on_scene:'b-blue',resolved:'b-green',cancelled:'b-gray'};
+  return `<span class="badge ${map[s]||'b-gray'}">${(s||'').replace('_',' ').toUpperCase()}</span>`;
+}
+
+function renderIncidents(list) {
+  const tbody = document.getElementById('incidents-tbody');
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px;">No incidents found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(i => `
+    <tr>
+      <td style="font-family:var(--mono);color:var(--muted);">#${i.id}</td>
+      <td>${i.incident_type}</td>
+      <td>${i.location}</td>
+      <td style="font-family:var(--mono);">${i.zone || '—'}</td>
+      <td>${severityBadge(i.severity)}</td>
+      <td>${statusBadge(i.status)}</td>
+      <td style="font-family:var(--mono);color:var(--muted);">${timeAgo(i.reported_at)}</td>
+      <td style="font-family:var(--mono);">${i.assigned_units}</td>
+    </tr>`).join('');
+}
+
+function filterIncidents() {
+  const q = document.getElementById('inc-search').value.toLowerCase();
+  renderIncidents(allIncidents.filter(i =>
+    (i.incident_type+i.location+i.zone+i.status+i.severity).toLowerCase().includes(q)
+  ));
+}
+
+function timeAgo(iso) {
+  if (!iso) return '—';
+  const d = Math.floor((Date.now() - new Date(iso)) / 60000);
+  if (d < 1) return 'just now';
+  if (d < 60) return `${d} min ago`;
+  return `${Math.floor(d/60)} hr ago`;
+}
+
+// ── Submit incident ───────────────────────────────────────────────────────────
+async function submitIncident() {
+  const status = document.getElementById('report-status');
+  const result = document.getElementById('report-result');
+  const content = document.getElementById('result-content');
+
+  const payload = {
+    incident_type: document.getElementById('f-type').value,
+    location:      document.getElementById('f-location').value,
+    description:   document.getElementById('f-desc').value,
+    zone:          document.getElementById('f-zone').value,
+    casualties:    parseInt(document.getElementById('f-casualties').value) || 0,
+    reported_by:   parseInt(document.getElementById('f-reporter').value) || 1,
+  };
+
+  if (!payload.location) { status.textContent = '⚠️ Location is required.'; return; }
+
+  status.textContent = 'Submitting…';
+  try {
+    const res  = await fetch(`${API}/incidents/report`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+
+    const ai = data.ai_classification;
+    const colorMap = {critical:'var(--red)',high:'var(--amber)',medium:'var(--blue)',low:'var(--green)'};
+    const c = colorMap[ai.severity] || 'var(--text)';
+
+    content.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+        <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px;">SEVERITY</div>
+          <div style="font-size:20px;font-weight:800;color:${c};font-family:var(--mono);">${ai.severity.toUpperCase()}</div></div>
+        <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px;">AI SCORE</div>
+          <div style="font-size:20px;font-weight:800;color:${c};font-family:var(--mono);">${Math.round(ai.severity_score*100)}%</div></div>
+        <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px;">UNITS NEEDED</div>
+          <div style="font-size:20px;font-weight:800;color:var(--text);font-family:var(--mono);">${ai.recommended_units}</div></div>
+      </div>
+      <div style="margin-top:10px;font-size:12px;color:var(--muted);">Method: ${ai.method} · Incident ID: #${data.id} · Status: ${data.status}</div>`;
+
+    result.style.display = 'block';
+    status.textContent = '✅ Reported successfully!';
+    showToast(ai.severity, payload.incident_type, payload.location);
+    fetchStats();
+  } catch (err) {
+    // Demo mode when backend is offline
+    const demo = demoClassify(payload.incident_type, payload.description, payload.casualties);
+    const colorMap = {critical:'var(--red)',high:'var(--amber)',medium:'var(--blue)',low:'var(--green)'};
+    const c = colorMap[demo.severity] || 'var(--text)';
+    content.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+        <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px;">SEVERITY</div>
+          <div style="font-size:20px;font-weight:800;color:${c};font-family:var(--mono);">${demo.severity.toUpperCase()}</div></div>
+        <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px;">AI SCORE</div>
+          <div style="font-size:20px;font-weight:800;color:${c};font-family:var(--mono);">${Math.round(demo.score*100)}%</div></div>
+        <div><div style="font-size:11px;color:var(--muted);margin-bottom:4px;">UNITS NEEDED</div>
+          <div style="font-size:20px;font-weight:800;color:var(--text);font-family:var(--mono);">${demo.units}</div></div>
+      </div>
+      <div style="margin-top:10px;font-size:12px;color:var(--muted);">Demo mode (backend offline) · AI rule-based classification</div>`;
+    result.style.display = 'block';
+    status.textContent = '⚡ Demo mode — connect backend for live submission';
+    showToast(demo.severity, payload.incident_type, payload.location);
+  }
+}
+
+// Demo classifier (mirrors Python logic)
+function demoClassify(type, desc, casualties) {
+  const critical = ['explosion','earthquake','building collapse','multiple casualties','trapped'];
+  const high     = ['fire','flood','major accident','serious injury','gas leak'];
+  const d = (desc||'').toLowerCase();
+  let score = 0.5;
+  const typeScores = {building_fire:0.85,flood:0.80,earthquake:0.90,explosion:0.95,gas_leak:0.75,road_accident:0.65,medical:0.60,other:0.50};
+  score = (typeScores[type]||0.50)*0.5;
+  if (critical.some(k => d.includes(k))) score += 0.40;
+  else if (high.some(k => d.includes(k))) score += 0.30;
+  else score += 0.20;
+  if (casualties >= 10) score += 0.15;
+  else if (casualties >= 3) score += 0.08;
+  score = Math.min(1.0, score);
+  const severity = score >= 0.80 ? 'critical' : score >= 0.60 ? 'high' : score >= 0.35 ? 'medium' : 'low';
+  const units = {critical:5,high:3,medium:2,low:1}[severity];
+  return {severity, score, units};
+}
+
+// ── Send alert ────────────────────────────────────────────────────────────────
+async function sendAlert() {
+  const status = document.getElementById('alert-status');
+  const payload = {
+    zone:       document.getElementById('a-zone').value,
+    alert_type: document.getElementById('a-type').value,
+    message:    document.getElementById('a-msg').value,
+    channel:    'sms',
+  };
+  if (!payload.message) { status.textContent = '⚠️ Message required.'; return; }
+  status.textContent = 'Sending…';
+  try {
+    const res  = await fetch(`${API}/alerts/send`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    status.innerHTML = `✅ Alert sent to <strong style="color:var(--text)">${data.recipients}</strong> citizens in Zone ${payload.zone}`;
+  } catch {
+    status.innerHTML = `✅ Demo: Alert broadcast to Zone ${payload.zone} (backend offline)`;
+  }
+}
+
+// ── Toast notifications ───────────────────────────────────────────────────────
+function showToast(severity, type, location) {
+  const icons = {critical:'🚨',high:'⚠️',medium:'ℹ️',low:'✅'};
+  const colors = {critical:'var(--red)',high:'var(--amber)',medium:'var(--blue)',low:'var(--green)'};
+  const el = document.createElement('div');
+  el.className = `toast ${severity}`;
+  el.style.borderLeftColor = colors[severity];
+  el.innerHTML = `
+    <div class="toast-icon">${icons[severity]||'⚠️'}</div>
+    <div>
+      <div class="toast-title" style="color:${colors[severity]}">${severity.toUpperCase()} — ${type.replace('_',' ')}</div>
+      <div class="toast-body">${location} · AI classified & logged</div>
+    </div>`;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 5000);
+}
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+function buildCharts() {
+  // Weekly incidents bar chart
+  const ctx1 = document.getElementById('incidentChart');
+  if (ctx1) new Chart(ctx1, {
+    type: 'bar',
+    data: {
+      labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+      datasets: [{
+        label: 'Critical', data: [3,5,2,4,6,3,2], backgroundColor: 'rgba(239,68,68,0.7)',
+      },{
+        label: 'High', data: [6,8,5,7,9,5,4], backgroundColor: 'rgba(245,158,11,0.5)',
+      },{
+        label: 'Medium', data: [4,6,8,5,7,4,3], backgroundColor: 'rgba(59,130,246,0.4)',
+      }]
+    },
+    options: {
+      responsive:true, scales:{
+        x:{grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#6b7280'}},
+        y:{grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#6b7280'},stacked:true}
+      },
+      plugins:{legend:{labels:{color:'#6b7280',font:{family:'Syne'}}}},
+    }
+  });
+
+  // Type distribution doughnut
+  const ctx2 = document.getElementById('typeChart');
+  if (ctx2) new Chart(ctx2, {
+    type: 'doughnut',
+    data: {
+      labels: ['Fire','Flood','Accident','Medical','Gas Leak','Other'],
+      datasets: [{
+        data: [28,19,24,15,8,6],
+        backgroundColor: ['rgba(239,68,68,0.8)','rgba(59,130,246,0.8)','rgba(245,158,11,0.8)','rgba(34,197,94,0.8)','rgba(168,85,247,0.8)','rgba(107,114,128,0.6)'],
+        borderWidth: 0,
+      }]
+    },
+    options: {
+      responsive:true,
+      plugins:{legend:{position:'right',labels:{color:'#9ca3af',font:{family:'Syne'},padding:16}}}
+    }
+  });
+}
+
+// ── SocketIO real-time ────────────────────────────────────────────────────────
+function initSocket() {
+  try {
+    const socket = io('http://localhost:5000', {transports:['websocket']});
+    socket.of('/live').on('new_incident', data => {
+      showToast(data.severity, data.incident_type, data.location);
+      fetchStats();
+      prependLiveFeed(data);
+    });
+    socket.of('/live').on('incident_status_update', data => {
+      fetchStats();
+    });
+  } catch(e) {}
+}
+
+function prependLiveFeed(data) {
+  const icons = {building_fire:'🔥',flood:'🌊',road_accident:'🚗',medical:'🏥',earthquake:'💥'};
+  const severityClass = {critical:'ii-red',high:'ii-amber',medium:'ii-blue',low:'ii-green'}[data.severity] || 'ii-blue';
+  const badgeClass = {critical:'b-red',high:'b-amber',medium:'b-blue',low:'b-gray'}[data.severity] || 'b-gray';
+  const el = document.createElement('div');
+  el.className = 'inc-item';
+  el.innerHTML = `
+    <div class="inc-icon ${severityClass}">${icons[data.incident_type]||'⚠️'}</div>
+    <div class="inc-body">
+      <div class="inc-title">${data.incident_type.replace('_',' ')} — ${data.location}</div>
+      <div class="inc-meta">Just now · Zone ${data.zone} · ${data.assigned_units} units</div>
+    </div>
+    <span class="badge ${badgeClass}">${data.severity.toUpperCase()}</span>`;
+  const feed = document.getElementById('live-incidents');
+  feed.prepend(el);
+  if (feed.children.length > 6) feed.lastElementChild.remove();
+}
+
+// ── Demo data (when backend is offline) ──────────────────────────────────────
+const DEMO_INCIDENTS = [
+  {id:2258,incident_type:'building_fire',location:'Sector 12',zone:'A',severity:'critical',status:'dispatched',reported_at:new Date(Date.now()-4*60000).toISOString(),assigned_units:3},
+  {id:2257,incident_type:'flood',location:'Riverbank Rd',zone:'B',severity:'high',status:'dispatched',reported_at:new Date(Date.now()-11*60000).toISOString(),assigned_units:2},
+  {id:2256,incident_type:'road_accident',location:'NH-48',zone:'C',severity:'high',status:'on_scene',reported_at:new Date(Date.now()-18*60000).toISOString(),assigned_units:1},
+  {id:2255,incident_type:'medical',location:'Block C',zone:'A',severity:'medium',status:'on_scene',reported_at:new Date(Date.now()-32*60000).toISOString(),assigned_units:1},
+  {id:2254,incident_type:'gas_leak',location:'Market St',zone:'E',severity:'critical',status:'resolved',reported_at:new Date(Date.now()-60*60000).toISOString(),assigned_units:4},
+];
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  fetchStats();
+  buildCharts();
+  initSocket();
+  setInterval(fetchStats, 30000);
+});
+</script>
+</body>
+</html>
