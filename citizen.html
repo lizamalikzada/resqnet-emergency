@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>ResQNet — Report Emergency</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:     #0a0c0f;
+    --bg2:    #111318;
+    --bg3:    #181c22;
+    --border: rgba(255,255,255,0.08);
+    --text:   #e8eaf0;
+    --muted:  #6b7280;
+    --red:    #ef4444;
+    --amber:  #f59e0b;
+    --green:  #22c55e;
+    --blue:   #3b82f6;
+    --font:   'Syne', sans-serif;
+    --mono:   'JetBrains Mono', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  .header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 16px 20px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 10; }
+  .logo-icon { width: 36px; height: 36px; background: var(--red); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+  .logo-text { font-size: 17px; font-weight: 800; color: #fff; }
+  .logo-sub  { font-size: 11px; color: var(--muted); }
+  .live-dot  { width: 8px; height: 8px; background: var(--green); border-radius: 50%; margin-left: auto; animation: pulse 1s infinite; flex-shrink: 0; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+
+  .hero { background: linear-gradient(135deg, #1a0a0a 0%, #0f0c14 100%); padding: 32px 20px 28px; border-bottom: 1px solid var(--border); text-align: center; }
+  .hero-title { font-size: 26px; font-weight: 800; color: #fff; margin-bottom: 8px; line-height: 1.1; }
+  .hero-title span { color: var(--red); }
+  .hero-sub { font-size: 14px; color: var(--muted); line-height: 1.5; }
+  .emergency-strip { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 16px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25); border-radius: 10px; padding: 10px 16px; }
+  .strip-text { font-size: 13px; color: var(--red); font-weight: 700; }
+
+  .form-wrap { padding: 24px 20px; max-width: 540px; margin: 0 auto; }
+
+  .step-indicator { display: flex; align-items: center; gap: 8px; margin-bottom: 28px; }
+  .step-dot { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; font-family: var(--mono); flex-shrink: 0; transition: all 0.3s; }
+  .step-dot.done    { background: var(--green); color: #000; }
+  .step-dot.active  { background: var(--red); color: #fff; }
+  .step-dot.pending { background: var(--bg3); color: var(--muted); border: 1px solid var(--border); }
+  .step-line { flex: 1; height: 1px; background: var(--border); }
+  .step-line.done { background: var(--green); }
+
+  .step-page { display: none; }
+  .step-page.active { display: block; animation: fadeIn 0.25s ease; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(8px);} to{opacity:1;transform:translateY(0);} }
+
+  .section-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 14px; }
+  .form-group { margin-bottom: 16px; }
+  .form-group label { display: block; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 7px; }
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%; background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 10px; padding: 13px 16px; font-size: 14px; color: var(--text);
+    font-family: var(--font); outline: none; transition: border 0.15s; appearance: none;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--red); }
+  .form-group select option { background: var(--bg3); }
+  .form-group textarea { resize: none; height: 90px; }
+
+  /* Type grid */
+  .type-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+  .type-btn { background: var(--bg3); border: 1px solid var(--border); border-radius: 12px; padding: 14px 8px; text-align: center; cursor: pointer; transition: all 0.15s; }
+  .type-btn:hover { border-color: rgba(255,255,255,0.2); }
+  .type-btn.selected { border-color: var(--red); background: rgba(239,68,68,0.1); }
+  .type-icon { font-size: 24px; margin-bottom: 5px; }
+  .type-label { font-size: 11px; font-weight: 600; color: var(--muted); }
+  .type-btn.selected .type-label { color: var(--red); }
+
+  /* Severity selector */
+  .severity-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+  .sev-btn { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 10px 6px; text-align: center; cursor: pointer; transition: all 0.15s; font-size: 12px; font-weight: 700; color: var(--muted); }
+  .sev-btn[data-sev="critical"].selected { border-color: var(--red); background: rgba(239,68,68,0.12); color: var(--red); }
+  .sev-btn[data-sev="high"].selected     { border-color: var(--amber); background: rgba(245,158,11,0.12); color: var(--amber); }
+  .sev-btn[data-sev="medium"].selected   { border-color: var(--blue); background: rgba(59,130,246,0.12); color: var(--blue); }
+  .sev-btn[data-sev="low"].selected      { border-color: var(--green); background: rgba(34,197,94,0.12); color: var(--green); }
+
+  /* Location */
+  .location-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: border 0.15s; }
+  .location-box:hover { border-color: var(--blue); }
+  .location-icon { font-size: 22px; flex-shrink: 0; }
+  .location-text { flex: 1; }
+  .location-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+  .location-sub   { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  .location-arrow { color: var(--muted); font-size: 18px; }
+
+  /* Photo upload */
+  .photo-zone { border: 2px dashed var(--border); border-radius: 12px; padding: 28px; text-align: center; cursor: pointer; transition: all 0.15s; margin-bottom: 16px; }
+  .photo-zone:hover { border-color: var(--blue); background: rgba(59,130,246,0.04); }
+  .photo-zone input { display: none; }
+  .photo-icon  { font-size: 32px; margin-bottom: 8px; }
+  .photo-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .photo-sub   { font-size: 12px; color: var(--muted); }
+  .photo-preview { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .photo-thumb { width: 64px; height: 64px; border-radius: 8px; object-fit: cover; border: 1px solid var(--border); }
+
+  /* Contact */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* AI result */
+  .ai-result { background: var(--bg3); border-radius: 12px; padding: 16px; margin-bottom: 20px; border: 1px solid var(--border); }
+  .ai-result.critical { border-color: rgba(239,68,68,0.4); }
+  .ai-result.high     { border-color: rgba(245,158,11,0.4); }
+  .ai-result.medium   { border-color: rgba(59,130,246,0.4); }
+  .ai-result.low      { border-color: rgba(34,197,94,0.4); }
+  .ai-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .ai-badge  { font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 99px; font-family: var(--mono); }
+  .ai-badge.critical { background: rgba(239,68,68,0.15); color: var(--red); }
+  .ai-badge.high     { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .ai-badge.medium   { background: rgba(59,130,246,0.15); color: var(--blue); }
+  .ai-badge.low      { background: rgba(34,197,94,0.15); color: var(--green); }
+  .ai-title { font-size: 14px; font-weight: 700; color: #fff; }
+  .ai-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+  .ai-stat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 3px; }
+  .ai-stat-val   { font-size: 18px; font-weight: 800; font-family: var(--mono); }
+
+  /* Buttons */
+  .btn-main { width: 100%; padding: 16px; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; border: none; font-family: var(--font); transition: all 0.15s; margin-bottom: 10px; }
+  .btn-red   { background: var(--red); color: #fff; }
+  .btn-red:hover { opacity: 0.88; transform: translateY(-1px); }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--border); background: var(--bg3); }
+
+  /* Success screen */
+  .success-wrap { text-align: center; padding: 40px 20px; }
+  .success-icon { font-size: 64px; margin-bottom: 16px; animation: pop 0.4s ease; }
+  @keyframes pop { 0%{transform:scale(0);} 80%{transform:scale(1.2);} 100%{transform:scale(1);} }
+  .success-title { font-size: 22px; font-weight: 800; color: #fff; margin-bottom: 8px; }
+  .success-sub   { font-size: 14px; color: var(--muted); line-height: 1.6; margin-bottom: 24px; }
+  .incident-id   { font-family: var(--mono); font-size: 13px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; display: inline-block; color: var(--green); margin-bottom: 24px; }
+  .tracking-steps { text-align: left; background: var(--bg3); border-radius: 12px; padding: 16px; border: 1px solid var(--border); margin-bottom: 20px; }
+  .track-item { display: flex; align-items: center; gap: 12px; padding: 8px 0; font-size: 13px; border-bottom: 1px solid var(--border); }
+  .track-item:last-child { border-bottom: none; }
+  .track-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* Bottom nav hint */
+  .bottom-hint { text-align: center; padding: 16px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); }
+  .bottom-hint a { color: var(--blue); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo-icon">🚨</div>
+  <div>
+    <div class="logo-text">ResQNet</div>
+    <div class="logo-sub">Citizen Emergency Portal</div>
+  </div>
+  <div class="live-dot"></div>
+</div>
+
+<div class="hero">
+  <div class="hero-title">Report an<br><span>Emergency</span></div>
+  <div class="hero-sub">Your report reaches the command center instantly.<br>AI classifies severity and dispatches units automatically.</div>
+  <div class="emergency-strip">
+    <span style="font-size:18px;">☎️</span>
+    <div class="strip-text">Life-threatening emergency? Call 112 first</div>
+  </div>
+</div>
+
+<div class="form-wrap">
+
+  <!-- Step indicator -->
+  <div class="step-indicator">
+    <div class="step-dot active" id="dot-1">1</div>
+    <div class="step-line" id="line-1"></div>
+    <div class="step-dot pending" id="dot-2">2</div>
+    <div class="step-line" id="line-2"></div>
+    <div class="step-dot pending" id="dot-3">3</div>
+    <div class="step-line" id="line-3"></div>
+    <div class="step-dot pending" id="dot-4">✓</div>
+  </div>
+
+  <!-- STEP 1: Incident type + severity -->
+  <div class="step-page active" id="step-1">
+    <div class="section-label">Step 1 — What happened?</div>
+
+    <div class="type-grid">
+      <div class="type-btn" onclick="selectType('building_fire',this)">
+        <div class="type-icon">🔥</div><div class="type-label">Fire</div>
+      </div>
+      <div class="type-btn" onclick="selectType('flood',this)">
+        <div class="type-icon">🌊</div><div class="type-label">Flood</div>
+      </div>
+      <div class="type-btn" onclick="selectType('road_accident',this)">
+        <div class="type-icon">🚗</div><div class="type-label">Accident</div>
+      </div>
+      <div class="type-btn" onclick="selectType('medical',this)">
+        <div class="type-icon">🏥</div><div class="type-label">Medical</div>
+      </div>
+      <div class="type-btn" onclick="selectType('earthquake',this)">
+        <div class="type-icon">🏔️</div><div class="type-label">Earthquake</div>
+      </div>
+      <div class="type-btn" onclick="selectType('gas_leak',this)">
+        <div class="type-icon">💨</div><div class="type-label">Gas Leak</div>
+      </div>
+      <div class="type-btn" onclick="selectType('explosion',this)">
+        <div class="type-icon">💥</div><div class="type-label">Explosion</div>
+      </div>
+      <div class="type-btn" onclick="selectType('rescue',this)">
+        <div class="type-icon">🆘</div><div class="type-label">Rescue</div>
+      </div>
+      <div class="type-btn" onclick="selectType('other',this)">
+        <div class="type-icon">⚠️</div><div class="type-label">Other</div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>How serious is it?</label>
+      <div class="severity-grid">
+        <div class="sev-btn" data-sev="critical" onclick="selectSeverity('critical',this)">🔴<br>Critical</div>
+        <div class="sev-btn" data-sev="high"     onclick="selectSeverity('high',this)">🟠<br>High</div>
+        <div class="sev-btn" data-sev="medium"   onclick="selectSeverity('medium',this)">🟡<br>Medium</div>
+        <div class="sev-btn" data-sev="low"       onclick="selectSeverity('low',this)">🟢<br>Low</div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Describe the emergency</label>
+      <textarea id="f-desc" placeholder="What is happening? How many people are involved? Is it spreading?"></textarea>
+    </div>
+
+    <div class="form-group">
+      <label>Casualties (approx.)</label>
+      <input type="number" id="f-casualties" value="0" min="0" placeholder="0">
+    </div>
+
+    <button class="btn-main btn-red" onclick="goStep(2)">Continue →</button>
+  </div>
+
+  <!-- STEP 2: Location -->
+  <div class="step-page" id="step-2">
+    <div class="section-label">Step 2 — Where is it?</div>
+
+    <div class="location-box" onclick="getLocation()">
+      <div class="location-icon">📍</div>
+      <div class="location-text">
+        <div class="location-title" id="gps-title">Use my current location</div>
+        <div class="location-sub" id="gps-sub">Tap to detect via GPS</div>
+      </div>
+      <div class="location-arrow">›</div>
+    </div>
+
+    <div class="form-group">
+      <label>Or type the address</label>
+      <input type="text" id="f-location" placeholder="e.g. Sector 12, Block B, Near Metro Station">
+    </div>
+
+    <div class="two-col">
+      <div class="form-group">
+        <label>Zone</label>
+        <select id="f-zone">
+          <option value="">Select zone</option>
+          <option>A</option><option>B</option><option>C</option>
+          <option>D</option><option>E</option><option>F</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Landmark (optional)</label>
+        <input type="text" id="f-landmark" placeholder="Near hospital, park…">
+      </div>
+    </div>
+
+    <button class="btn-main btn-red" onclick="goStep(3)">Continue →</button>
+    <button class="btn-main btn-ghost" onclick="goStep(1)">← Back</button>
+  </div>
+
+  <!-- STEP 3: Photo + Contact -->
+  <div class="step-page" id="step-3">
+    <div class="section-label">Step 3 — Photo & contact</div>
+
+    <div class="photo-zone" onclick="document.getElementById('photo-input').click()">
+      <input type="file" id="photo-input" accept="image/*" multiple onchange="handlePhotos(this)">
+      <div class="photo-icon">📷</div>
+      <div class="photo-title">Add photos (optional)</div>
+      <div class="photo-sub">Helps responders assess the situation faster</div>
+      <div class="photo-preview" id="photo-preview"></div>
+    </div>
+
+    <div class="two-col">
+      <div class="form-group">
+        <label>Your name</label>
+        <input type="text" id="f-name" placeholder="Full name">
+      </div>
+      <div class="form-group">
+        <label>Phone number</label>
+        <input type="tel" id="f-phone" placeholder="98765 43210">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Any additional info</label>
+      <input type="text" id="f-extra" placeholder="Access route, gate number, special instructions…">
+    </div>
+
+    <button class="btn-main btn-red" onclick="submitReport()">🚨 Submit Emergency Report</button>
+    <button class="btn-main btn-ghost" onclick="goStep(2)">← Back</button>
+  </div>
+
+  <!-- STEP 4: Success -->
+  <div class="step-page" id="step-4">
+    <div class="success-wrap">
+      <div class="success-icon">✅</div>
+      <div class="success-title">Report Submitted!</div>
+      <div class="success-sub">Your emergency has been logged and the AI has classified its severity. Responders are being dispatched.</div>
+      <div class="incident-id" id="incident-id-display">#INC-2259</div>
+
+      <div id="ai-result-box"></div>
+
+      <div class="tracking-steps">
+        <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">What happens next</div>
+        <div class="track-item"><div class="track-dot" style="background:var(--green);"></div>Report received by command center</div>
+        <div class="track-item"><div class="track-dot" style="background:var(--green);"></div>AI severity classification complete</div>
+        <div class="track-item"><div class="track-dot" style="background:var(--amber);animation:pulse 1s infinite;"></div>Emergency units being dispatched…</div>
+        <div class="track-item"><div class="track-dot" style="background:var(--border);"></div>Units en route to your location</div>
+        <div class="track-item"><div class="track-dot" style="background:var(--border);"></div>Incident resolved</div>
+      </div>
+
+      <button class="btn-main btn-ghost" onclick="resetForm()">Report another incident</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="bottom-hint">
+  ResQNet Emergency Portal &nbsp;·&nbsp; <a href="index.html">Command Center →</a>
+</div>
+
+<script>
+const API = 'http://localhost:5000/api';
+let selectedType = '';
+let selectedSeverity = '';
+let gpsCoords = null;
+
+// ── Type selection ────────────────────────────────────────────────────────────
+function selectType(type, el) {
+  document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedType = type;
+}
+
+// ── Severity selection ────────────────────────────────────────────────────────
+function selectSeverity(sev, el) {
+  document.querySelectorAll('.sev-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedSeverity = sev;
+}
+
+// ── Step navigation ───────────────────────────────────────────────────────────
+function goStep(n) {
+  // Validate step 1
+  if (n === 2 && !selectedType) {
+    alert('Please select the type of emergency.');
+    return;
+  }
+  if (n === 2 && !document.getElementById('f-desc').value.trim()) {
+    alert('Please describe the emergency.');
+    return;
+  }
+
+  document.querySelectorAll('.step-page').forEach(p => p.classList.remove('active'));
+  document.getElementById('step-' + n).classList.add('active');
+
+  // Update indicators
+  for (let i = 1; i <= 4; i++) {
+    const dot  = document.getElementById('dot-' + i);
+    const line = document.getElementById('line-' + i);
+    if (i < n)       { dot.classList.add('done'); dot.classList.remove('active','pending'); dot.textContent = '✓'; }
+    else if (i === n){ dot.classList.add('active'); dot.classList.remove('done','pending'); if(i<4) dot.textContent = i; }
+    else             { dot.classList.add('pending'); dot.classList.remove('done','active'); dot.textContent = i===4?'✓':i; }
+    if (line) { line.classList.toggle('done', i < n); }
+  }
+
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+// ── GPS location ──────────────────────────────────────────────────────────────
+function getLocation() {
+  const title = document.getElementById('gps-title');
+  const sub   = document.getElementById('gps-sub');
+  title.textContent = 'Detecting location…';
+  sub.textContent   = 'Please allow location access';
+
+  if (!navigator.geolocation) {
+    title.textContent = 'GPS not available';
+    sub.textContent   = 'Please type your address below';
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(pos => {
+    gpsCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    title.textContent = '📍 Location detected';
+    sub.textContent   = `${gpsCoords.lat.toFixed(5)}, ${gpsCoords.lng.toFixed(5)}`;
+    // Pre-fill the address input
+    document.getElementById('f-location').placeholder = 'GPS coordinates captured — or type address';
+  }, err => {
+    title.textContent = 'Could not detect location';
+    sub.textContent   = 'Please type your address manually';
+  });
+}
+
+// ── Photo upload ──────────────────────────────────────────────────────────────
+function handlePhotos(input) {
+  const preview = document.getElementById('photo-preview');
+  preview.innerHTML = '';
+  Array.from(input.files).slice(0, 4).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = document.createElement('img');
+      img.className = 'photo-thumb';
+      img.src = e.target.result;
+      preview.appendChild(img);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ── Demo classifier ───────────────────────────────────────────────────────────
+function demoClassify(type, desc, casualties) {
+  const critical = ['explosion','earthquake','collapse','trapped'];
+  const high     = ['fire','flood','accident','gas leak','serious'];
+  const d = (desc||'').toLowerCase();
+  let score = {building_fire:0.85,flood:0.80,earthquake:0.90,explosion:0.95,gas_leak:0.75,road_accident:0.65,medical:0.60,other:0.50}[type] || 0.50;
+  score = score * 0.5;
+  if (critical.some(k => d.includes(k))) score += 0.40;
+  else if (high.some(k => d.includes(k))) score += 0.30;
+  else score += 0.20;
+  if (casualties >= 10) score += 0.15;
+  else if (casualties >= 3) score += 0.08;
+  score = Math.min(1.0, score);
+  const severity = score >= 0.80 ? 'critical' : score >= 0.60 ? 'high' : score >= 0.35 ? 'medium' : 'low';
+  return { severity, severity_score: score, recommended_units: {critical:5,high:3,medium:2,low:1}[severity], method: 'rule_based' };
+}
+
+// ── Submit report ─────────────────────────────────────────────────────────────
+async function submitReport() {
+  const location = document.getElementById('f-location').value.trim();
+  if (!location && !gpsCoords) {
+    alert('Please enter your location or use GPS.');
+    return;
+  }
+
+  const payload = {
+    incident_type: selectedType || 'other',
+    description:   document.getElementById('f-desc').value,
+    location:      location || `GPS: ${gpsCoords?.lat}, ${gpsCoords?.lng}`,
+    zone:          document.getElementById('f-zone').value,
+    latitude:      gpsCoords?.lat,
+    longitude:     gpsCoords?.lng,
+    casualties:    parseInt(document.getElementById('f-casualties').value) || 0,
+    reported_by:   1,
+  };
+
+  let ai, incidentId;
+  try {
+    const res  = await fetch(`${API}/incidents/report`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    ai         = data.ai_classification;
+    incidentId = data.id;
+  } catch {
+    // Demo mode
+    ai = demoClassify(payload.incident_type, payload.description, payload.casualties);
+    incidentId = Math.floor(2200 + Math.random() * 100);
+  }
+
+  // Show result
+  document.getElementById('incident-id-display').textContent = `#INC-${incidentId}`;
+  const colorMap = {critical:'var(--red)',high:'var(--amber)',medium:'var(--blue)',low:'var(--green)'};
+  const c = colorMap[ai.severity];
+  document.getElementById('ai-result-box').innerHTML = `
+    <div class="ai-result ${ai.severity}" style="margin-bottom:20px;">
+      <div class="ai-header">
+        <span class="ai-badge ${ai.severity}">AI: ${ai.severity.toUpperCase()}</span>
+        <div class="ai-title">Severity classified automatically</div>
+      </div>
+      <div class="ai-stats">
+        <div>
+          <div class="ai-stat-label">Severity</div>
+          <div class="ai-stat-val" style="color:${c};">${ai.severity.toUpperCase()}</div>
+        </div>
+        <div>
+          <div class="ai-stat-label">Confidence</div>
+          <div class="ai-stat-val" style="color:${c};">${Math.round(ai.severity_score*100)}%</div>
+        </div>
+        <div>
+          <div class="ai-stat-label">Units</div>
+          <div class="ai-stat-val" style="color:var(--text);">${ai.recommended_units}</div>
+        </div>
+      </div>
+    </div>`;
+
+  goStep(4);
+}
+
+// ── Reset form ────────────────────────────────────────────────────────────────
+function resetForm() {
+  selectedType = '';
+  selectedSeverity = '';
+  gpsCoords = null;
+  document.querySelectorAll('.type-btn,.sev-btn').forEach(b => b.classList.remove('selected'));
+  ['f-desc','f-location','f-landmark','f-name','f-phone','f-extra'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('f-casualties').value = '0';
+  document.getElementById('photo-preview').innerHTML = '';
+  document.getElementById('gps-title').textContent = 'Use my current location';
+  document.getElementById('gps-sub').textContent = 'Tap to detect via GPS';
+  goStep(1);
+}
+</script>
+</body>
+</html>
